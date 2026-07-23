@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Generate medical speech datasets for ASR fine-tuning using LLM and TTS (no recorded speech required)."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10.12, <3.13"
 dependencies = [
     "nltk>=3.9.1,<4.0.0",
