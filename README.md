@@ -10,9 +10,9 @@
 
 # MumbleMED
 
-MumbleMED is a research pipeline for creating synthetic medical speech datasets for ASR fine-tuning. It starts with clinical language, either generated from terminology tables or read from existing report text, turns that language into speech with TTS, and writes audio paths and transcripts in a training-friendly format.
+MumbleMED is a research framework for creating synthetic medical speech datasets for ASR fine-tuning. It starts with clinical language, either generated from terminology tables or read from existing report text, turns that language into speech with TTS, and writes audio paths and transcripts in a training-friendly format.
 
-The repository is deliberately small. It does not contain patient audio, real speaker recordings, or official terminology exports. Instead, it ships with tiny public examples so that reviewers and new users can run the pipeline without private data. For real experiments, you bring your own licensed terminology tables, real report text if available, and optionally consented speaker reference clips.
+The repository is deliberately small. It does not contain patient audio, real speaker recordings, or official terminology exports. Instead, it ships with tiny public examples so that reviewers and new users can run the framework without private data. For real experiments, you bring your own licensed terminology tables, real report text if available, and optionally consented speaker reference clips.
 
 The mental model is simple. Terminology and prompts define what should be said, TTS defines how it is spoken, and the splitter makes sure related samples do not leak across train, validation, and test. The result is a small lab bench for synthetic medical ASR data, with fewer mysteries than a full hospital data lake.
 
@@ -47,7 +47,7 @@ uv run mumblemed demo --audio-mode tts --tts-language en
 
 The demo is only a smoke test, so it should not be treated as an experimental dataset. For group-aware train, validation, and test splits, use the `llm` or `real` mode.
 
-## A Small Pipeline Test
+## A Small Framework Test
 
 After the demo works, you can try a one-document run through the LLM/TTS path. The following example assumes a self-hosted OpenAI-compatible endpoint, and you should replace the model name and endpoint with your local setup:
 
@@ -145,7 +145,7 @@ The `llm` mode uses terminology tables as clinical vocabulary sources. Each term
 display,code
 ```
 
-This repository includes tiny placeholder tables so the synthetic pipeline can be tested without private terminology exports:
+This repository includes tiny placeholder tables so the synthetic framework can be tested without private terminology exports:
 
 ```text
 examples/coding-systems/
@@ -229,7 +229,7 @@ LOCAL_LLM="false"
 
 MumbleMED is research software, not a clinical device. Generated text and audio can contain mistakes, hallucinated clinical details, strange phrasing, wrong abbreviations, or acoustic artifacts. You should treat every generated sample as raw synthetic data until it has been inspected and filtered.
 
-The public examples in this repository are intentionally tiny and are only meant to make the pipeline runnable. They are not medical terminology resources, benchmark datasets, or evidence that a generated dataset is clinically valid.
+The public examples in this repository are intentionally tiny and are only meant to make the framework runnable. They are not medical terminology resources, benchmark datasets, or evidence that a generated dataset is clinically valid.
 
 If you use real report text, licensed terminology exports, hosted LLM APIs, or speaker reference clips, you are responsible for the relevant permissions, consent, privacy review, and data governance requirements. Hosted LLM providers may process submitted text outside your local environment, so do not send sensitive data to a provider unless that is explicitly allowed in your setting.
 
