@@ -12,8 +12,6 @@
 
 MumbleMED is a research pipeline for creating synthetic medical speech datasets for ASR fine-tuning. It starts with clinical language, either generated from terminology tables or read from existing report text, turns that language into speech with TTS, and writes audio paths and transcripts in a training-friendly format.
 
-MumbleMED is developed by SHIP.AI at the Institute for Artificial Intelligence in Medicine (IKIM).
-
 The repository is deliberately small. It does not contain patient audio, real speaker recordings, or official terminology exports. Instead, it ships with tiny public examples so that reviewers and new users can run the pipeline without private data. For real experiments, you bring your own licensed terminology tables, real report text if available, and optionally consented speaker reference clips.
 
 The mental model is simple. Terminology and prompts define what should be said, TTS defines how it is spoken, and the splitter makes sure related samples do not leak across train, validation, and test. The result is a small lab bench for synthetic medical ASR data, with fewer mysteries than a full hospital data lake.
