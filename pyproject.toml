@@ -1,7 +1,7 @@
 [project]
 name = "mumblemed"
 version = "0.1.0"
-description = "Generate medical speech datasets for ASR fine-tuning using LLM and TTS (no recorded speech required)."
+description = "Generate medical speech datasets for ASR fine-tuning using LLM and TTS."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
