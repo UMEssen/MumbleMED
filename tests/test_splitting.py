@@ -42,6 +42,12 @@ def test_real_split_writer_keeps_patients_in_one_csv(tmp_path):
             "patient_id": [f"p{i}" for i in range(10) for _ in range(2)],
             "document_id": [f"d{i}_{j}" for i in range(10) for j in range(2)],
             "label_chunk": ["clinical text"] * 20,
+            "tts_chunk": ["clinical text Punkt"] * 20,
+            "label_word_count": [2] * 20,
+            "tts_word_count": [3] * 20,
+            "tts_expansion_ratio": [1.5] * 20,
+            "was_rechunked_after_tts_transform": [False] * 20,
+            "was_over_tts_word_budget": [False] * 20,
             "duration_in_seconds": [1.0] * 20,
             "speaker_id": ["default"] * 20,
             "audio_path": ["sample.wav"] * 20,
@@ -67,3 +73,6 @@ def test_real_split_writer_keeps_patients_in_one_csv(tmp_path):
     stats = json.loads((tmp_path / "stats_demo.json").read_text(encoding="utf-8"))
     assert stats["split_group"] == "patient_id"
     assert stats["total_patients"] == 10
+    assert stats["splits"]["train"]["label_words"]["max"] == 2
+    assert stats["splits"]["train"]["tts_words"]["max"] == 3
+    assert stats["splits"]["train"]["tts_expansion_ratio"]["mean"] == 1.5

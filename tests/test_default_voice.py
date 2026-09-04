@@ -159,6 +159,50 @@ def test_llm_validation_rejects_invalid_chunking_mode(
         )
 
 
+def test_llm_validation_rejects_invalid_tts_length_policy(
+    tmp_path: Path,
+    example_coding_dir: Path,
+):
+    with pytest.raises(ValueError, match="tts_length_policy"):
+        validate_llm_config(
+            LlmDatasetConfig(
+                model_name="demo-model",
+                llm_endpoint="http://127.0.0.1:8000/v1",
+                llm_api_key=None,
+                dataset_path=tmp_path / "audio",
+                csv_path=tmp_path / "csv",
+                num_docs=1,
+                num_workers=1,
+                coding_systems_path=example_coding_dir,
+                use_default_voice=True,
+                local_llm=True,
+                tts_length_policy="stretch",
+            )
+        )
+
+
+def test_llm_validation_rejects_invalid_max_tts_words(
+    tmp_path: Path,
+    example_coding_dir: Path,
+):
+    with pytest.raises(ValueError, match="max_tts_words"):
+        validate_llm_config(
+            LlmDatasetConfig(
+                model_name="demo-model",
+                llm_endpoint="http://127.0.0.1:8000/v1",
+                llm_api_key=None,
+                dataset_path=tmp_path / "audio",
+                csv_path=tmp_path / "csv",
+                num_docs=1,
+                num_workers=1,
+                coding_systems_path=example_coding_dir,
+                use_default_voice=True,
+                local_llm=True,
+                max_tts_words=0,
+            )
+        )
+
+
 def test_llm_config_reads_words_per_minute_from_env(
     tmp_path: Path,
     monkeypatch,
@@ -199,6 +243,50 @@ def test_llm_config_reads_chunking_mode_from_env(
     )
 
     assert config.chunking_mode == "word-divide"
+
+
+def test_llm_config_reads_tts_length_controls_from_env(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("LLM_NAME", "demo-model")
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:8000/v1")
+    monkeypatch.setenv("LLM_DATASET_PATH", str(tmp_path / "audio"))
+    monkeypatch.setenv("LLM_CSV_PATH", str(tmp_path / "csv"))
+    monkeypatch.setenv("MAX_TTS_WORDS", "32")
+    monkeypatch.setenv("TTS_LENGTH_POLICY", "warn")
+
+    config = build_llm_config_from_env(
+        num_docs=1,
+        num_workers=1,
+        use_default_voice=True,
+        local_llm=True,
+        coding_systems_path=str(tmp_path),
+    )
+
+    assert config.max_tts_words == 32
+    assert config.tts_length_policy == "warn"
+
+
+def test_llm_config_treats_empty_max_tts_words_as_unset(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("LLM_NAME", "demo-model")
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:8000/v1")
+    monkeypatch.setenv("LLM_DATASET_PATH", str(tmp_path / "audio"))
+    monkeypatch.setenv("LLM_CSV_PATH", str(tmp_path / "csv"))
+    monkeypatch.setenv("MAX_TTS_WORDS", "")
+
+    config = build_llm_config_from_env(
+        num_docs=1,
+        num_workers=1,
+        use_default_voice=True,
+        local_llm=True,
+        coding_systems_path=str(tmp_path),
+    )
+
+    assert config.max_tts_words is None
 
 
 def test_llm_config_preserves_invalid_words_per_minute_override(

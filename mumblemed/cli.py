@@ -139,6 +139,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["sentence-strict", "sentence-divide", "word-divide"],
         help="Chunking strategy before TTS (default: sentence-divide, or CHUNKING_MODE).",
     )
+    llm_parser.add_argument(
+        "--max-tts-words",
+        type=int,
+        help="Maximum words allowed after TTS text normalization (default: derived from --words-per-minute).",
+    )
+    llm_parser.add_argument(
+        "--tts-length-policy",
+        choices=["warn", "rechunk", "skip"],
+        help="How to handle chunks whose TTS-normalized text exceeds --max-tts-words (default: rechunk).",
+    )
     llm_parser.add_argument("--whisper", action="store_true", help="Filter train/val samples to max 30s for Whisper fine-tuning.")
     llm_parser.add_argument(
         "--use-default-voice",
@@ -188,6 +198,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--chunking-mode",
         choices=["sentence-strict", "sentence-divide", "word-divide"],
         help="Chunking strategy before TTS (default: sentence-divide, or CHUNKING_MODE).",
+    )
+    real_parser.add_argument(
+        "--max-tts-words",
+        type=int,
+        help="Maximum words allowed after TTS text normalization (default: derived from --words-per-minute).",
+    )
+    real_parser.add_argument(
+        "--tts-length-policy",
+        choices=["warn", "rechunk", "skip"],
+        help="How to handle chunks whose TTS-normalized text exceeds --max-tts-words (default: rechunk).",
     )
     real_parser.add_argument("--whisper", action="store_true", help="Filter train/val samples to max 30s for Whisper fine-tuning.")
     real_parser.add_argument(
@@ -252,6 +272,8 @@ def main() -> None:
             use_default_voice=merged.get("use_default_voice", False),
             words_per_minute=merged.get("words_per_minute"),
             chunking_mode=merged.get("chunking_mode"),
+            max_tts_words=merged.get("max_tts_words"),
+            tts_length_policy=merged.get("tts_length_policy"),
         )
         if args.dry_run:
             validate_llm_config(config)
@@ -286,6 +308,8 @@ def main() -> None:
             use_default_voice=merged.get("use_default_voice", False),
             words_per_minute=merged.get("words_per_minute"),
             chunking_mode=merged.get("chunking_mode"),
+            max_tts_words=merged.get("max_tts_words"),
+            tts_length_policy=merged.get("tts_length_policy"),
         )
         if args.dry_run:
             validate_real_config(config)

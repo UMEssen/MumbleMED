@@ -13,8 +13,17 @@ from openai import OpenAI
 from tqdm import tqdm
 
 from mumblemed.config import get_env, load_env, resolve_path
-from mumblemed.utils.chunking import CHUNKING_MODES, DEFAULT_CHUNKING_MODE, chunk_document, get_audio_duration
-from mumblemed.utils.llm import process_text_structure
+from mumblemed.utils.chunking import (
+    CHUNKING_MODES,
+    DEFAULT_CHUNKING_MODE,
+    chunk_document,
+    get_audio_duration,
+)
+from mumblemed.utils.llm import (
+    DEFAULT_TTS_LENGTH_POLICY,
+    TTS_LENGTH_POLICIES,
+    prepare_tts_segments,
+)
 from mumblemed.utils.speech import (
     generate_tts_audio,
     init_tts,
@@ -47,6 +56,8 @@ class RealDatasetConfig:
     local_llm: bool = False
     words_per_minute: int = 80
     chunking_mode: str = DEFAULT_CHUNKING_MODE
+    max_tts_words: int | None = None
+    tts_length_policy: str = DEFAULT_TTS_LENGTH_POLICY
     seed: int | None = None
 
 
@@ -85,6 +96,8 @@ def _process_document(item):
         use_default_voice,
         words_per_minute,
         chunking_mode,
+        max_tts_words,
+        tts_length_policy,
     ) = item
 
     try:
@@ -98,46 +111,70 @@ def _process_document(item):
             chunking_mode=chunking_mode,
         )
         results = []
+        max_tts_word_budget = _max_tts_words(max_tts_words, words_per_minute)
+        output_sentence_id = 0
 
-        for sentence_id, chunk in enumerate(chunks):
+        for chunk in chunks:
             try:
-                tts_chunk = process_text_structure(client=client, model_name=model_name, text=chunk)
-                label_chunk = chunk
-
                 speaker_file = random_speaker_selection(use_default_voice=use_default_voice)
                 speaker_id = speaker_id_from_path(speaker_file)
-
-                audio_path = pathlib.Path(dataset_path) / f"{document_id}_sentence_{sentence_id}_{speaker_id}.wav"
-                audio_file = generate_tts_audio(
-                    tts_model=tts_model,
-                    text=tts_chunk,
-                    output_path=str(audio_path),
+                tts_segments = prepare_tts_segments(
+                    client=client,
+                    model_name=model_name,
+                    label_chunk=chunk,
                     language_code=tts_language,
-                    reference_voice_path=str(speaker_file) if speaker_file else None,
+                    max_tts_words=max_tts_word_budget,
+                    tts_length_policy=tts_length_policy,
                 )
 
-                audio_duration = get_audio_duration(audio_path)
+                for segment in tts_segments:
+                    tts_chunk = segment["tts_chunk"]
+                    label_chunk = segment["label_chunk"]
+                    sentence_id = output_sentence_id
+                    output_sentence_id += 1
 
-                results.append(
-                    {
-                        "document_id": document_id,
-                        "patient_id": patient_id,
-                        "tts_chunk": tts_chunk,
-                        "label_chunk": label_chunk,
-                        "speaker_id": speaker_id,
-                        "duration_in_seconds": audio_duration,
-                        "audio_path": audio_file,
-                    }
-                )
-
-                if verbose:
-                    LOGGER.info(
-                        "[%s] Document %s Chunk %s | duration=%.2f",
-                        current_process().name,
-                        document_id,
-                        sentence_id,
-                        audio_duration,
+                    audio_path = (
+                        pathlib.Path(dataset_path)
+                        / f"{document_id}_sentence_{sentence_id}_{speaker_id}.wav"
                     )
+                    audio_file = generate_tts_audio(
+                        tts_model=tts_model,
+                        text=tts_chunk,
+                        output_path=str(audio_path),
+                        language_code=tts_language,
+                        reference_voice_path=str(speaker_file) if speaker_file else None,
+                    )
+
+                    audio_duration = get_audio_duration(audio_path)
+
+                    results.append(
+                        {
+                            "document_id": document_id,
+                            "patient_id": patient_id,
+                            "tts_chunk": tts_chunk,
+                            "label_chunk": label_chunk,
+                            "speaker_id": speaker_id,
+                            "duration_in_seconds": audio_duration,
+                            "audio_path": audio_file,
+                            "label_word_count": segment["label_word_count"],
+                            "tts_word_count": segment["tts_word_count"],
+                            "tts_expansion_ratio": segment["tts_expansion_ratio"],
+                            "was_rechunked_after_tts_transform": segment[
+                                "was_rechunked_after_tts_transform"
+                            ],
+                            "was_over_tts_word_budget": segment["was_over_tts_word_budget"],
+                        }
+                    )
+
+                    if verbose:
+                        LOGGER.info(
+                            "[%s] Document %s Chunk %s | duration=%.2f | tts_words=%s",
+                            current_process().name,
+                            document_id,
+                            sentence_id,
+                            audio_duration,
+                            segment["tts_word_count"],
+                        )
 
             except Exception as exc:
                 LOGGER.exception("Error processing chunk in document %s: %s", document_id, exc)
@@ -206,14 +243,56 @@ def _compute_split_stats(df_split: pd.DataFrame) -> dict:
         stats["patients"] = int(df_split.patient_id.nunique())
 
     if "label_chunk" in df_split.columns and not df_split.empty:
-        word_counts = df_split["label_chunk"].astype(str).apply(lambda x: len(x.split()))
+        word_counts = (
+            df_split["label_word_count"]
+            if "label_word_count" in df_split.columns
+            else df_split["label_chunk"].astype(str).apply(lambda x: len(x.split()))
+        )
         stats["text_words"] = {
             "total": int(word_counts.sum()),
             "mean": float(word_counts.mean()),
             "max": int(word_counts.max()),
         }
+        stats["label_words"] = _word_count_stats(word_counts)
+
+    if "tts_chunk" in df_split.columns and not df_split.empty:
+        tts_word_counts = (
+            df_split["tts_word_count"]
+            if "tts_word_count" in df_split.columns
+            else df_split["tts_chunk"].astype(str).apply(lambda x: len(x.split()))
+        )
+        stats["tts_words"] = _word_count_stats(tts_word_counts)
+
+    if "tts_expansion_ratio" in df_split.columns and not df_split.empty:
+        ratios = df_split["tts_expansion_ratio"].astype(float)
+        stats["tts_expansion_ratio"] = {
+            "mean": float(ratios.mean()),
+            "max": float(ratios.max()),
+            "p50": float(ratios.quantile(0.5)),
+            "p90": float(ratios.quantile(0.9)),
+        }
+
+    if "was_rechunked_after_tts_transform" in df_split.columns:
+        stats["rechunked_after_tts_transform"] = int(
+            df_split["was_rechunked_after_tts_transform"].sum()
+        )
+
+    if "was_over_tts_word_budget" in df_split.columns:
+        stats["over_tts_word_budget"] = int(df_split["was_over_tts_word_budget"].sum())
 
     return stats
+
+
+def _word_count_stats(word_counts: pd.Series) -> dict:
+    """Summarize a word-count series."""
+    word_counts = word_counts.astype(float)
+    return {
+        "min": int(word_counts.min()),
+        "mean": float(word_counts.mean()),
+        "max": int(word_counts.max()),
+        "p50": float(word_counts.quantile(0.5)),
+        "p90": float(word_counts.quantile(0.9)),
+    }
 
 
 def _write_stats(path: pathlib.Path, stats: dict) -> None:
@@ -234,6 +313,10 @@ def validate_real_config(config: RealDatasetConfig) -> None:
         raise ValueError("words_per_minute must be > 0")
     if config.chunking_mode not in CHUNKING_MODES:
         raise ValueError(f"chunking_mode must be one of {sorted(CHUNKING_MODES)}")
+    if config.max_tts_words is not None and config.max_tts_words <= 0:
+        raise ValueError("max_tts_words must be > 0")
+    if config.tts_length_policy not in TTS_LENGTH_POLICIES:
+        raise ValueError(f"tts_length_policy must be one of {sorted(TTS_LENGTH_POLICIES)}")
     if not config.model_name:
         raise ValueError("model_name is required")
     if not config.llm_endpoint:
@@ -267,7 +350,10 @@ def validate_real_config(config: RealDatasetConfig) -> None:
             raise ValueError("patient_id column must not contain empty values.")
 
     if not config.use_default_voice:
-        voices_path = pathlib.Path(os.getenv("SPEAKER_VOICES_PATH") or (pathlib.Path(__file__).resolve().parents[2] / "speaker-voices"))
+        voices_path = pathlib.Path(
+            os.getenv("SPEAKER_VOICES_PATH")
+            or (pathlib.Path(__file__).resolve().parents[2] / "speaker-voices")
+        )
         if not voices_path.exists():
             raise FileNotFoundError(f"Speaker voices directory not found: {voices_path}")
         if not any(x.is_file() for x in voices_path.iterdir()):
@@ -312,6 +398,8 @@ def generate_real_dataset(config: RealDatasetConfig) -> None:
             config.use_default_voice,
             config.words_per_minute,
             config.chunking_mode,
+            config.max_tts_words,
+            config.tts_length_policy,
         )
         for idx, patient_id, doc in zip(indices, patient_ids, docs)
     ]
@@ -351,6 +439,8 @@ def build_real_config_from_env(
     local_llm: bool | str | None = None,
     words_per_minute: int | str | None = None,
     chunking_mode: str | None = None,
+    max_tts_words: int | str | None = None,
+    tts_length_policy: str | None = None,
 ) -> RealDatasetConfig:
     """Build a real-text dataset config from CLI overrides, config files, and .env."""
     load_env()
@@ -376,6 +466,10 @@ def build_real_config_from_env(
             words_per_minute if words_per_minute is not None else get_env("WORDS_PER_MINUTE", 80)
         ),
         chunking_mode=chunking_mode or get_env("CHUNKING_MODE", DEFAULT_CHUNKING_MODE),
+        max_tts_words=_parse_optional_int(
+            max_tts_words if max_tts_words is not None else get_env("MAX_TTS_WORDS", None)
+        ),
+        tts_length_policy=tts_length_policy or get_env("TTS_LENGTH_POLICY", DEFAULT_TTS_LENGTH_POLICY),
     )
 
 
@@ -388,6 +482,20 @@ def _parse_bool(value: bool | str | None) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _parse_optional_int(value: int | str | None) -> int | None:
+    """Parse optional integer values from CLI/env/config input."""
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return int(value)
+
+
 def _words_per_30s(words_per_minute: int) -> int:
     """Convert a speaking-rate estimate into the chunker's 30-second budget."""
     return max(1, round(words_per_minute / 2))
+
+
+def _max_tts_words(max_tts_words: int | None, words_per_minute: int) -> int:
+    """Resolve the transformed-text word budget used before TTS synthesis."""
+    return max_tts_words or _words_per_30s(words_per_minute)

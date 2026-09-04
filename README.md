@@ -147,6 +147,14 @@ You can choose how strictly MumbleMED follows sentence boundaries:
 
 The default mode, `sentence-divide`, keeps language-aware sentence and report-line boundaries where possible, but divides overlong sentence-like units into word windows. Use `sentence-strict` if sentence integrity is more important than length control. Use `word-divide` for highly structured or poorly punctuated documents where a fixed word budget is the priority.
 
+There is a second length check after the text has been rewritten for TTS. This matters because punctuation, measurements, abbreviations, slashes, staging labels, and local shorthand can expand during the lautschrift-style transformation. A written chunk may look short, but the spoken TTS input may be longer after `.` becomes `Punkt`, `/` becomes `Schrägstrich`, or abbreviations are expanded. By default, MumbleMED derives the transformed-text budget from `--words-per-minute`, but you can set it directly:
+
+```bash
+--max-tts-words 30
+```
+
+When transformed text exceeds that budget, `--tts-length-policy rechunk` splits the original label chunk more conservatively, reruns the TTS transformation on the smaller pieces, and then synthesizes those pieces. You can use `warn` to keep over-budget chunks while recording the issue, or `skip` to omit them before audio generation.
+
 ## Terminology And Prompts
 
 The `llm` mode uses terminology tables as clinical vocabulary sources. Each terminology table should be a CSV file with two columns:
@@ -186,7 +194,7 @@ In `real` mode, MumbleMED creates a run folder under `--dataset-path`.
 
 Before speech synthesis, MumbleMED chunks text with language-aware sentence boundaries and keeps meaningful non-empty report lines as possible section boundaries. This is useful for clinical documents such as discharge letters, radiology reports, and pathology descriptions, where line structure often carries more information than ordinary prose punctuation. Sentence boundary detection is still not magic. Clinical German, local abbreviations, sparse punctuation, headings, codes, and copied report templates can confuse NLTK, so researchers should inspect chunk length distributions and choose the chunking mode that fits their document structure.
 
-The CSVs contain transcript text, audio paths, speaker ids, durations, split information, and group identifiers. A small `stats.json` is written next to them so you can inspect the generated dataset before training.
+The CSVs contain transcript text, audio paths, speaker ids, durations, split information, group identifiers, and word-count metadata for both the original transcript chunk and the transformed TTS input. A small `stats.json` is written next to them so you can inspect the generated dataset before training.
 
 Splits are group-aware. In `llm` mode, chunks from the same synthetic document/patient stay together. In `real` mode, splitting uses `patient_id` when that column exists; otherwise, each row is treated as its own document-level group. This avoids the common ASR leakage problem where chunks from the same clinical case quietly appear in both train and test. For reproducible split assignment, pass `--seed`.
 
@@ -227,6 +235,8 @@ USE_DEFAULT_TTS_VOICE="true"
 TTS_LANGUAGE="en"
 WORDS_PER_MINUTE="80"
 CHUNKING_MODE="sentence-divide"
+MAX_TTS_WORDS=""
+TTS_LENGTH_POLICY="rechunk"
 ```
 
 Use `LOCAL_LLM=true` only for self-hosted endpoints. Hosted providers should use `LLM_API_KEY`.

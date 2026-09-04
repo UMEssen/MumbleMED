@@ -1,7 +1,10 @@
 import random
+from math import floor
 from pathlib import Path
 
 import pandas as pd
+
+from mumblemed.utils.chunking import chunk_document
 
 # Built-in coding system names and their default CSV filenames
 DEFAULT_CODING_SYSTEM_FILES = {
@@ -9,6 +12,8 @@ DEFAULT_CODING_SYSTEM_FILES = {
     "OPS": "ops.csv",
     "RADLEX": "radlex.csv",
 }
+TTS_LENGTH_POLICIES = {"warn", "rechunk", "skip"}
+DEFAULT_TTS_LENGTH_POLICY = "rechunk"
 
 
 def _load_display_table(data_dir: Path, filename: str) -> pd.DataFrame:
@@ -191,3 +196,90 @@ def process_text_structure(client, model_name, text):
     synthetic_text = response.choices[0].message.content.strip()
 
     return synthetic_text
+
+
+def count_words(text: str) -> int:
+    """Count whitespace-separated words in generated label or TTS text."""
+    return len(str(text).split())
+
+
+def tts_expansion_ratio(label_text: str, tts_text: str) -> float:
+    """Return how much the TTS-oriented text expanded relative to the label."""
+    label_word_count = count_words(label_text)
+    if label_word_count == 0:
+        return 0.0
+    return count_words(tts_text) / label_word_count
+
+
+def derive_rechunk_word_budget(label_text: str, tts_text: str, max_tts_words: int) -> int:
+    """Choose a smaller label budget from the observed TTS expansion ratio."""
+    ratio = tts_expansion_ratio(label_text, tts_text)
+    if ratio <= 0:
+        return max(1, max_tts_words)
+    return max(1, floor(max_tts_words / ratio))
+
+
+def build_tts_length_metadata(
+    label_chunk: str,
+    tts_chunk: str,
+    max_tts_words: int,
+    was_rechunked_after_tts_transform: bool = False,
+) -> dict:
+    """Create auditable length metadata for one TTS synthesis candidate."""
+    label_word_count = count_words(label_chunk)
+    tts_word_count = count_words(tts_chunk)
+    return {
+        "label_chunk": label_chunk,
+        "tts_chunk": tts_chunk,
+        "label_word_count": label_word_count,
+        "tts_word_count": tts_word_count,
+        "tts_expansion_ratio": float(tts_word_count / label_word_count) if label_word_count else 0.0,
+        "was_rechunked_after_tts_transform": was_rechunked_after_tts_transform,
+        "was_over_tts_word_budget": tts_word_count > max_tts_words,
+    }
+
+
+def prepare_tts_segments(
+    client,
+    model_name: str,
+    label_chunk: str,
+    language_code: str,
+    max_tts_words: int,
+    tts_length_policy: str = DEFAULT_TTS_LENGTH_POLICY,
+) -> list[dict]:
+    """Transform label text for TTS and optionally rechunk if lautschrift expands too far."""
+    if tts_length_policy not in TTS_LENGTH_POLICIES:
+        raise ValueError(f"tts_length_policy must be one of {sorted(TTS_LENGTH_POLICIES)}")
+
+    tts_chunk = process_text_structure(client=client, model_name=model_name, text=label_chunk)
+    metadata = build_tts_length_metadata(
+        label_chunk=label_chunk,
+        tts_chunk=tts_chunk,
+        max_tts_words=max_tts_words,
+    )
+
+    if not metadata["was_over_tts_word_budget"] or tts_length_policy == "warn":
+        return [metadata]
+    if tts_length_policy == "skip":
+        return []
+
+    rechunk_budget = derive_rechunk_word_budget(label_chunk, tts_chunk, max_tts_words)
+    subchunks = chunk_document(
+        document=label_chunk,
+        words_per_30s=rechunk_budget,
+        language_code=language_code,
+        chunking_mode="sentence-divide",
+    )
+
+    segments = []
+    for subchunk in subchunks:
+        sub_tts_chunk = process_text_structure(client=client, model_name=model_name, text=subchunk)
+        segments.append(
+            build_tts_length_metadata(
+                label_chunk=subchunk,
+                tts_chunk=sub_tts_chunk,
+                max_tts_words=max_tts_words,
+                was_rechunked_after_tts_transform=True,
+            )
+        )
+    return segments
