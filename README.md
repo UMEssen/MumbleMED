@@ -155,6 +155,8 @@ There is a second length check after the text has been rewritten for TTS. This m
 
 When transformed text exceeds that budget, `--tts-length-policy rechunk` splits the original label chunk more conservatively, reruns the TTS transformation on the smaller pieces, and then synthesizes those pieces. You can use `warn` to keep over-budget chunks while recording the issue, or `skip` to omit them before audio generation.
 
+These settings are deliberately exposed because clinical documents are not all shaped the same way. A discharge letter with dense paragraphs, a radiology impression with short telegraphic lines, a pathology report with structured fields, and an oncology note full of TNM stages, medication schedules, and abbreviations can behave very differently during chunking and TTS transformation. Researchers should therefore run a small pilot, inspect the generated `stats.json`, and check whether the retained chunks still represent the document style they actually want the ASR model to learn.
+
 ## Terminology And Prompts
 
 The `llm` mode uses terminology tables as clinical vocabulary sources. Each terminology table should be a CSV file with two columns:
@@ -194,7 +196,7 @@ In `real` mode, MumbleMED creates a run folder under `--dataset-path`.
 
 Before speech synthesis, MumbleMED chunks text with language-aware sentence boundaries and keeps meaningful non-empty report lines as possible section boundaries. This is useful for clinical documents such as discharge letters, radiology reports, and pathology descriptions, where line structure often carries more information than ordinary prose punctuation. Sentence boundary detection is still not magic. Clinical German, local abbreviations, sparse punctuation, headings, codes, and copied report templates can confuse NLTK, so researchers should inspect chunk length distributions and choose the chunking mode that fits their document structure.
 
-The CSVs contain transcript text, audio paths, speaker ids, durations, split information, group identifiers, and word-count metadata for both the original transcript chunk and the transformed TTS input. A small `stats.json` is written next to them so you can inspect the generated dataset before training.
+The CSVs contain transcript text, audio paths, speaker ids, durations, split information, group identifiers, and word-count metadata for both the original transcript chunk and the transformed TTS input. A small `stats.json` is written next to them so you can inspect the generated dataset before training. The label-word and TTS-word summaries are especially useful when lautschrift expansion turns compact written notation into longer spoken input.
 
 Splits are group-aware. In `llm` mode, chunks from the same synthetic document/patient stay together. In `real` mode, splitting uses `patient_id` when that column exists; otherwise, each row is treated as its own document-level group. This avoids the common ASR leakage problem where chunks from the same clinical case quietly appear in both train and test. For reproducible split assignment, pass `--seed`.
 
@@ -259,6 +261,8 @@ The public examples in this repository are intentionally tiny and are only meant
 If you use real report text, licensed terminology exports, hosted LLM APIs, or speaker reference clips, you are responsible for the relevant permissions, consent, privacy review, and data governance requirements. Hosted LLM providers may process submitted text outside your local environment, so do not send sensitive data to a provider unless that is explicitly allowed in your setting.
 
 Synthetic speech should be evaluated before training or evaluation use. In particular, check whether the TTS output preserves the information that matters for your task, including clinical meaning, document structure, terminology, and local reporting conventions.
+
+Chunking is also an experimental choice. Users should know the failure modes of their own documents before scaling up generation: long line-based sections, unusual punctuation, copied table-like reports, dense medication lists, measurements, staging expressions, and local abbreviations can all change how much text ends up in one spoken sample. A small pilot run is often enough to reveal whether `sentence-strict`, `sentence-divide`, or `word-divide` is the right mode for a given corpus.
 
 ## License
 
