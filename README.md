@@ -63,6 +63,7 @@ uv run mumblemed --verbose llm \
   --coding-systems-path ./examples/coding-systems \
   --use-default-voice \
   --words-per-minute 80 \
+  --chunking-mode sentence-divide \
   --tts-language en
 ```
 
@@ -82,6 +83,7 @@ uv run mumblemed --verbose llm \
   --coding-systems-path ./examples/coding-systems \
   --use-default-voice \
   --words-per-minute 80 \
+  --chunking-mode sentence-divide \
   --tts-language en
 ```
 
@@ -137,6 +139,14 @@ You can also adjust the expected speaking rate that MumbleMED uses for chunking:
 
 This does not force the TTS model to speak at exactly that tempo. It tells MumbleMED how much text should roughly fit into a 30-second sample before synthesis. Lower values create shorter chunks for slower, more deliberate speech. Higher values allow longer chunks for faster or more compressed dictation. The final audio duration still depends on the TTS model, so generated datasets should be inspected before training.
 
+You can choose how strictly MumbleMED follows sentence boundaries:
+
+```bash
+--chunking-mode sentence-divide
+```
+
+The default mode, `sentence-divide`, keeps language-aware sentence and report-line boundaries where possible, but divides overlong sentence-like units into word windows. Use `sentence-strict` if sentence integrity is more important than length control. Use `word-divide` for highly structured or poorly punctuated documents where a fixed word budget is the priority.
+
 ## Terminology And Prompts
 
 The `llm` mode uses terminology tables as clinical vocabulary sources. Each terminology table should be a CSV file with two columns:
@@ -174,7 +184,7 @@ CSV files   -> --csv-path
 
 In `real` mode, MumbleMED creates a run folder under `--dataset-path`.
 
-Before speech synthesis, MumbleMED chunks text with language-aware sentence boundaries and keeps meaningful non-empty report lines as possible section boundaries. This is useful for clinical documents such as discharge letters, radiology reports, and pathology descriptions, where line structure often carries more information than ordinary prose punctuation. If a single sentence or section is still too long for the configured word budget, MumbleMED splits it further at clinical-friendly separators and then, if needed, by fixed word windows.
+Before speech synthesis, MumbleMED chunks text with language-aware sentence boundaries and keeps meaningful non-empty report lines as possible section boundaries. This is useful for clinical documents such as discharge letters, radiology reports, and pathology descriptions, where line structure often carries more information than ordinary prose punctuation. Sentence boundary detection is still not magic. Clinical German, local abbreviations, sparse punctuation, headings, codes, and copied report templates can confuse NLTK, so researchers should inspect chunk length distributions and choose the chunking mode that fits their document structure.
 
 The CSVs contain transcript text, audio paths, speaker ids, durations, split information, and group identifiers. A small `stats.json` is written next to them so you can inspect the generated dataset before training.
 
@@ -216,6 +226,7 @@ CODING_SYSTEMS_PATH="./examples/coding-systems"
 USE_DEFAULT_TTS_VOICE="true"
 TTS_LANGUAGE="en"
 WORDS_PER_MINUTE="80"
+CHUNKING_MODE="sentence-divide"
 ```
 
 Use `LOCAL_LLM=true` only for self-hosted endpoints. Hosted providers should use `LLM_API_KEY`.

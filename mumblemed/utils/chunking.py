@@ -12,6 +12,9 @@ _NLTK_LANGUAGE_BY_CODE = {
     "en-gb": "english",
 }
 
+CHUNKING_MODES = {"sentence-strict", "sentence-divide", "word-divide"}
+DEFAULT_CHUNKING_MODE = "sentence-divide"
+
 
 def _nltk_language(language_code: str) -> str:
     """Return the NLTK Punkt language for a TTS language code."""
@@ -108,14 +111,26 @@ def _sentences_from_lines(document: str, language: str) -> list[str]:
     return sentences
 
 
-def split_into_chunks(sentences, words_per_30s):
-    """Group text units into chunks and split overlong units deterministically."""
+def _normalize_flat_text(document: str) -> str:
+    """Normalize a document into one whitespace-collapsed text stream."""
+    return re.sub(r"\s+", " ", " ".join(_split_lines(document))).strip()
+
+
+def split_into_chunks(sentences, words_per_30s, chunking_mode: str = DEFAULT_CHUNKING_MODE):
+    """Group text units according to the selected chunking mode."""
+    if chunking_mode not in CHUNKING_MODES:
+        raise ValueError(f"chunking_mode must be one of {sorted(CHUNKING_MODES)}")
+
     chunks = []
     current_chunk = []
     current_word_count = 0
 
     for sentence in sentences:
-        for unit in _split_overlong_unit(sentence, words_per_30s):
+        units = [sentence]
+        if chunking_mode == "sentence-divide":
+            units = _split_overlong_unit(sentence, words_per_30s)
+
+        for unit in units:
             word_count = _word_count(unit)
             if current_chunk and current_word_count + word_count > words_per_30s:
                 chunks.append(" ".join(current_chunk))
@@ -136,13 +151,28 @@ def split_into_chunks(sentences, words_per_30s):
     return chunks
 
 
-def chunk_document(document: str, words_per_30s=40, language_code: str = "en"):
-    """Split a clinical document into language-aware, line-preserving chunks."""
+def chunk_document(
+    document: str,
+    words_per_30s=40,
+    language_code: str = "en",
+    chunking_mode: str = DEFAULT_CHUNKING_MODE,
+):
+    """Split a clinical document into chunks using the requested strategy."""
+    if chunking_mode not in CHUNKING_MODES:
+        raise ValueError(f"chunking_mode must be one of {sorted(CHUNKING_MODES)}")
+
+    if chunking_mode == "word-divide":
+        return _split_by_word_window(_normalize_flat_text(document), words_per_30s)
+
     language = _nltk_language(language_code)
     _ensure_punkt(language)
     sentences = _sentences_from_lines(document, language=language)
 
-    return split_into_chunks(sentences=sentences, words_per_30s=words_per_30s)
+    return split_into_chunks(
+        sentences=sentences,
+        words_per_30s=words_per_30s,
+        chunking_mode=chunking_mode,
+    )
 
 
 def get_audio_duration(path):

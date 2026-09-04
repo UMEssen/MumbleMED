@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from mumblemed.config import get_env, load_env, resolve_path
 from mumblemed.paths import PROJECT_ROOT
-from mumblemed.utils.chunking import chunk_document, get_audio_duration
+from mumblemed.utils.chunking import CHUNKING_MODES, DEFAULT_CHUNKING_MODE, chunk_document, get_audio_duration
 from mumblemed.utils.llm import (
     generate_random_displays,
     generate_synthetic_medical_text,
@@ -55,6 +55,7 @@ class LlmDatasetConfig:
     use_default_voice: bool = False
     local_llm: bool = False
     words_per_minute: int = 80
+    chunking_mode: str = DEFAULT_CHUNKING_MODE
     split_seed: int | None = None
 
 
@@ -88,6 +89,7 @@ def _process_document(
     tts_language: str = "de",
     use_default_voice: bool = False,
     words_per_minute: int = 80,
+    chunking_mode: str = DEFAULT_CHUNKING_MODE,
 ):
     """Generate one synthetic document, synthesize its chunks, and return metadata rows."""
     global tts_model, coding_tables
@@ -106,6 +108,7 @@ def _process_document(
             document=synthetic_text,
             words_per_30s=_words_per_30s(words_per_minute),
             language_code=tts_language,
+            chunking_mode=chunking_mode,
         )
         results = []
 
@@ -171,6 +174,7 @@ def _process_document_wrapper(args):
         tts_language,
         use_default_voice,
         words_per_minute,
+        chunking_mode,
     ) = args
     return _process_document(
         idx,
@@ -182,6 +186,7 @@ def _process_document_wrapper(args):
         tts_language,
         use_default_voice,
         words_per_minute,
+        chunking_mode,
     )
 
 
@@ -268,6 +273,8 @@ def validate_llm_config(config: LlmDatasetConfig) -> None:
         raise ValueError("num_workers must be > 0")
     if config.words_per_minute <= 0:
         raise ValueError("words_per_minute must be > 0")
+    if config.chunking_mode not in CHUNKING_MODES:
+        raise ValueError(f"chunking_mode must be one of {sorted(CHUNKING_MODES)}")
     if not config.model_name:
         raise ValueError("model_name is required")
     if not config.llm_endpoint:
@@ -348,6 +355,7 @@ def generate_llm_dataset(config: LlmDatasetConfig) -> None:
                 config.tts_language,
                 config.use_default_voice,
                 config.words_per_minute,
+                config.chunking_mode,
             )
             for i in range(config.num_docs)
         )
@@ -420,6 +428,7 @@ def build_llm_config_from_env(
     use_default_voice: bool | str | None = None,
     local_llm: bool | str | None = None,
     words_per_minute: int | str | None = None,
+    chunking_mode: str | None = None,
     split_seed: int | None = None,
 ) -> LlmDatasetConfig:
     """Build an LLM dataset config from CLI overrides, config files, and .env."""
@@ -449,5 +458,6 @@ def build_llm_config_from_env(
         words_per_minute=int(
             words_per_minute if words_per_minute is not None else get_env("WORDS_PER_MINUTE", 80)
         ),
+        chunking_mode=chunking_mode or get_env("CHUNKING_MODE", DEFAULT_CHUNKING_MODE),
         split_seed=split_seed,
     )

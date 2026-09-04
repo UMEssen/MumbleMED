@@ -137,6 +137,28 @@ def test_llm_validation_rejects_invalid_words_per_minute(
         )
 
 
+def test_llm_validation_rejects_invalid_chunking_mode(
+    tmp_path: Path,
+    example_coding_dir: Path,
+):
+    with pytest.raises(ValueError, match="chunking_mode"):
+        validate_llm_config(
+            LlmDatasetConfig(
+                model_name="demo-model",
+                llm_endpoint="http://127.0.0.1:8000/v1",
+                llm_api_key=None,
+                dataset_path=tmp_path / "audio",
+                csv_path=tmp_path / "csv",
+                num_docs=1,
+                num_workers=1,
+                coding_systems_path=example_coding_dir,
+                use_default_voice=True,
+                local_llm=True,
+                chunking_mode="creative-chaos",
+            )
+        )
+
+
 def test_llm_config_reads_words_per_minute_from_env(
     tmp_path: Path,
     monkeypatch,
@@ -156,6 +178,27 @@ def test_llm_config_reads_words_per_minute_from_env(
     )
 
     assert config.words_per_minute == 120
+
+
+def test_llm_config_reads_chunking_mode_from_env(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("LLM_NAME", "demo-model")
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:8000/v1")
+    monkeypatch.setenv("LLM_DATASET_PATH", str(tmp_path / "audio"))
+    monkeypatch.setenv("LLM_CSV_PATH", str(tmp_path / "csv"))
+    monkeypatch.setenv("CHUNKING_MODE", "word-divide")
+
+    config = build_llm_config_from_env(
+        num_docs=1,
+        num_workers=1,
+        use_default_voice=True,
+        local_llm=True,
+        coding_systems_path=str(tmp_path),
+    )
+
+    assert config.chunking_mode == "word-divide"
 
 
 def test_llm_config_preserves_invalid_words_per_minute_override(

@@ -134,6 +134,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Estimated speaking rate used for chunk sizing before TTS (default: 80, or WORDS_PER_MINUTE).",
     )
+    llm_parser.add_argument(
+        "--chunking-mode",
+        choices=["sentence-strict", "sentence-divide", "word-divide"],
+        help="Chunking strategy before TTS (default: sentence-divide, or CHUNKING_MODE).",
+    )
     llm_parser.add_argument("--whisper", action="store_true", help="Filter train/val samples to max 30s for Whisper fine-tuning.")
     llm_parser.add_argument(
         "--use-default-voice",
@@ -178,6 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--words-per-minute",
         type=int,
         help="Estimated speaking rate used for chunk sizing before TTS (default: 80, or WORDS_PER_MINUTE).",
+    )
+    real_parser.add_argument(
+        "--chunking-mode",
+        choices=["sentence-strict", "sentence-divide", "word-divide"],
+        help="Chunking strategy before TTS (default: sentence-divide, or CHUNKING_MODE).",
     )
     real_parser.add_argument("--whisper", action="store_true", help="Filter train/val samples to max 30s for Whisper fine-tuning.")
     real_parser.add_argument(
@@ -241,6 +251,7 @@ def main() -> None:
             tts_language=merged.get("tts_language"),
             use_default_voice=merged.get("use_default_voice", False),
             words_per_minute=merged.get("words_per_minute"),
+            chunking_mode=merged.get("chunking_mode"),
         )
         if args.dry_run:
             validate_llm_config(config)
@@ -274,6 +285,7 @@ def main() -> None:
             tts_language=merged.get("tts_language"),
             use_default_voice=merged.get("use_default_voice", False),
             words_per_minute=merged.get("words_per_minute"),
+            chunking_mode=merged.get("chunking_mode"),
         )
         if args.dry_run:
             validate_real_config(config)
