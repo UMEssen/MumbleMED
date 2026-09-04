@@ -105,6 +105,7 @@ def _process_document(
         chunks = chunk_document(
             document=synthetic_text,
             words_per_30s=_words_per_30s(words_per_minute),
+            language_code=tts_language,
         )
         results = []
 

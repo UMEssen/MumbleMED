@@ -135,7 +135,7 @@ You can also adjust the expected speaking rate that MumbleMED uses for chunking:
 --words-per-minute 80
 ```
 
-This does not force the TTS model to speak at exactly that tempo. It tells MumbleMED how much text should roughly fit into a 30-second sample before synthesis. Lower values create shorter chunks for slower, more deliberate speech. Higher values allow longer chunks for faster or more compressed dictation.
+This does not force the TTS model to speak at exactly that tempo. It tells MumbleMED how much text should roughly fit into a 30-second sample before synthesis. Lower values create shorter chunks for slower, more deliberate speech. Higher values allow longer chunks for faster or more compressed dictation. The final audio duration still depends on the TTS model, so generated datasets should be inspected before training.
 
 ## Terminology And Prompts
 
@@ -174,9 +174,13 @@ CSV files   -> --csv-path
 
 In `real` mode, MumbleMED creates a run folder under `--dataset-path`.
 
+Before speech synthesis, MumbleMED chunks text with language-aware sentence boundaries and keeps meaningful non-empty report lines as possible section boundaries. This is useful for clinical documents such as discharge letters, radiology reports, and pathology descriptions, where line structure often carries more information than ordinary prose punctuation. If a single sentence or section is still too long for the configured word budget, MumbleMED splits it further at clinical-friendly separators and then, if needed, by fixed word windows.
+
 The CSVs contain transcript text, audio paths, speaker ids, durations, split information, and group identifiers. A small `stats.json` is written next to them so you can inspect the generated dataset before training.
 
 Splits are group-aware. In `llm` mode, chunks from the same synthetic document/patient stay together. In `real` mode, splitting uses `patient_id` when that column exists; otherwise, each row is treated as its own document-level group. This avoids the common ASR leakage problem where chunks from the same clinical case quietly appear in both train and test. For reproducible split assignment, pass `--seed`.
+
+When `--whisper` is enabled, MumbleMED filters train and validation samples above 30 seconds after audio has been generated. This is a downstream filter, not a segmentation step, so duration and text-length distributions should still be checked for each experiment.
 
 ## Useful Commands
 

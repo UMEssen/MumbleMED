@@ -53,12 +53,13 @@ tts_model = None
 
 
 def clean_text(text: str) -> str:
-    """Normalize whitespace and escaped line breaks before chunking a report."""
-    text = re.sub(r'(\\r\\n)+', ' ', text)
-    text = re.sub(r'[\r\n]+', ' ', text)
-    text = text.replace('\t', ' ').replace('\xa0', ' ')
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+    """Normalize report text while preserving meaningful line boundaries."""
+    text = re.sub(r"(\\r\\n)+", "\n", text)
+    text = re.sub(r"\\n+", "\n", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\t", " ").replace("\xa0", " ")
+    lines = [re.sub(r"[ ]+", " ", line).strip() for line in text.split("\n")]
+    return "\n".join(line for line in lines if line).strip()
 
 
 def _init_worker(tts_language: str = "de"):
@@ -91,6 +92,7 @@ def _process_document(item):
         chunks = chunk_document(
             document=document_text,
             words_per_30s=_words_per_30s(words_per_minute),
+            language_code=tts_language,
         )
         results = []
 
