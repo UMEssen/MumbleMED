@@ -65,6 +65,7 @@ class LlmDatasetConfig:
     chunking_mode: str = DEFAULT_CHUNKING_MODE
     max_tts_words: int | None = None
     tts_length_policy: str = DEFAULT_TTS_LENGTH_POLICY
+    max_audio_duration_seconds: float = 30.0
     split_seed: int | None = None
 
 
@@ -230,6 +231,7 @@ def _split_and_write(
     df: pd.DataFrame,
     csv_path: pathlib.Path,
     whisper_mode: bool,
+    max_audio_duration_seconds: float,
     seed: int | None = None,
 ) -> None:
     """Write train/validation/test CSVs and a compact stats report."""
@@ -247,34 +249,46 @@ def _split_and_write(
         stats_report["total_patients"] = int(df.patient_id.nunique())
 
     for mode, df_tmp in splits.items():
+        df_before_filter = df_tmp
+        duration_filter_seconds = max_audio_duration_seconds if whisper_mode and mode in {"train", "val"} else None
         if whisper_mode and mode in {"train", "val"} and "duration_in_seconds" in df_tmp.columns:
-            df_tmp = df_tmp[df_tmp.duration_in_seconds <= 30]
+            df_tmp = df_tmp[df_tmp.duration_in_seconds <= max_audio_duration_seconds]
         out_file = csv_path / f"{mode}.csv"
         df_tmp.to_csv(out_file, index=False, sep=";")
         LOGGER.info("Saved %s split to %s", mode, out_file)
 
-        stats_report["splits"][mode] = _compute_split_stats(df_tmp)
+        stats_report["splits"][mode] = _compute_split_stats(
+            df_tmp,
+            df_before_filter=df_before_filter,
+            duration_filter_seconds=duration_filter_seconds,
+        )
 
     stats_path = csv_path / "stats.json"
     _write_stats(stats_path, stats_report)
 
 
-def _compute_split_stats(df_split: pd.DataFrame) -> dict:
+def _compute_split_stats(
+    df_split: pd.DataFrame,
+    df_before_filter: pd.DataFrame | None = None,
+    duration_filter_seconds: float | None = None,
+) -> dict:
     """Summarize sample counts, durations, speakers, and transcript length."""
+    df_before_filter = df_split if df_before_filter is None else df_before_filter
     stats = {
         "samples": int(len(df_split)),
+        "samples_before_duration_filter": int(len(df_before_filter)),
+        "samples_after_duration_filter": int(len(df_split)),
+        "samples_removed_by_duration_filter": int(len(df_before_filter) - len(df_split)),
+        "duration_filter_seconds": duration_filter_seconds,
         "documents": int(df_split.document_id.nunique()) if "document_id" in df_split.columns else 0,
     }
 
-    if "duration_in_seconds" in df_split.columns and not df_split.empty:
-        durations = df_split["duration_in_seconds"].astype(float)
-        stats["duration_seconds"] = {
-            "min": float(durations.min()),
-            "max": float(durations.max()),
-            "mean": float(durations.mean()),
-            "p50": float(durations.quantile(0.5)),
-            "p90": float(durations.quantile(0.9)),
-        }
+    if "duration_in_seconds" in df_before_filter.columns:
+        stats["duration_seconds_before_filter"] = _duration_stats(df_before_filter)
+
+    if "duration_in_seconds" in df_split.columns:
+        stats["duration_seconds_after_filter"] = _duration_stats(df_split)
+        stats["duration_seconds"] = stats["duration_seconds_after_filter"]
 
     if "speaker_id" in df_split.columns:
         stats["speaker_counts"] = df_split["speaker_id"].value_counts().to_dict()
@@ -321,6 +335,20 @@ def _compute_split_stats(df_split: pd.DataFrame) -> dict:
     return stats
 
 
+def _duration_stats(df_split: pd.DataFrame) -> dict:
+    """Summarize duration values for a split."""
+    if df_split.empty:
+        return {}
+    durations = df_split["duration_in_seconds"].astype(float)
+    return {
+        "min": float(durations.min()),
+        "max": float(durations.max()),
+        "mean": float(durations.mean()),
+        "p50": float(durations.quantile(0.5)),
+        "p90": float(durations.quantile(0.9)),
+    }
+
+
 def _word_count_stats(word_counts: pd.Series) -> dict:
     """Summarize a word-count series."""
     word_counts = word_counts.astype(float)
@@ -355,6 +383,8 @@ def validate_llm_config(config: LlmDatasetConfig) -> None:
         raise ValueError("max_tts_words must be > 0")
     if config.tts_length_policy not in TTS_LENGTH_POLICIES:
         raise ValueError(f"tts_length_policy must be one of {sorted(TTS_LENGTH_POLICIES)}")
+    if config.max_audio_duration_seconds <= 0:
+        raise ValueError("max_audio_duration_seconds must be > 0")
     if not config.model_name:
         raise ValueError("model_name is required")
     if not config.llm_endpoint:
@@ -454,6 +484,7 @@ def generate_llm_dataset(config: LlmDatasetConfig) -> None:
         df,
         config.csv_path,
         whisper_mode=config.whisper_mode,
+        max_audio_duration_seconds=config.max_audio_duration_seconds,
         seed=config.split_seed if config.split_seed is not None else config.seed,
     )
 
@@ -527,6 +558,7 @@ def build_llm_config_from_env(
     chunking_mode: str | None = None,
     max_tts_words: int | str | None = None,
     tts_length_policy: str | None = None,
+    max_audio_duration_seconds: float | str | None = None,
     split_seed: int | None = None,
 ) -> LlmDatasetConfig:
     """Build an LLM dataset config from CLI overrides, config files, and .env."""
@@ -561,5 +593,10 @@ def build_llm_config_from_env(
             max_tts_words if max_tts_words is not None else get_env("MAX_TTS_WORDS", None)
         ),
         tts_length_policy=tts_length_policy or get_env("TTS_LENGTH_POLICY", DEFAULT_TTS_LENGTH_POLICY),
+        max_audio_duration_seconds=float(
+            max_audio_duration_seconds
+            if max_audio_duration_seconds is not None
+            else get_env("MAX_AUDIO_DURATION_SECONDS", 30.0)
+        ),
         split_seed=split_seed,
     )

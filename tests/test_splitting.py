@@ -54,7 +54,14 @@ def test_real_split_writer_keeps_patients_in_one_csv(tmp_path):
         }
     )
 
-    _split_and_write(df, tmp_path, suffix="demo", whisper_mode=False, seed=7)
+    _split_and_write(
+        df,
+        tmp_path,
+        suffix="demo",
+        whisper_mode=False,
+        max_audio_duration_seconds=30.0,
+        seed=7,
+    )
 
     split_patients = {}
     for split in ("train", "val", "test"):
@@ -76,3 +83,43 @@ def test_real_split_writer_keeps_patients_in_one_csv(tmp_path):
     assert stats["splits"]["train"]["label_words"]["max"] == 2
     assert stats["splits"]["train"]["tts_words"]["max"] == 3
     assert stats["splits"]["train"]["tts_expansion_ratio"]["mean"] == 1.5
+
+
+def test_real_split_writer_reports_custom_duration_filtering(tmp_path):
+    df = pd.DataFrame(
+        {
+            "patient_id": [f"p{i}" for i in range(10) for _ in range(2)],
+            "document_id": [f"d{i}_{j}" for i in range(10) for j in range(2)],
+            "label_chunk": ["clinical text"] * 20,
+            "tts_chunk": ["clinical text"] * 20,
+            "duration_in_seconds": [1.0, 4.0] * 10,
+            "speaker_id": ["default"] * 20,
+            "audio_path": ["sample.wav"] * 20,
+        }
+    )
+
+    _split_and_write(
+        df,
+        tmp_path,
+        suffix="demo",
+        whisper_mode=True,
+        max_audio_duration_seconds=2.5,
+        seed=7,
+    )
+
+    train_df = pd.read_csv(tmp_path / "train_demo.csv", sep=";")
+    val_df = pd.read_csv(tmp_path / "val_demo.csv", sep=";")
+    test_df = pd.read_csv(tmp_path / "test_demo.csv", sep=";")
+    stats = json.loads((tmp_path / "stats_demo.json").read_text(encoding="utf-8"))
+
+    assert train_df.duration_in_seconds.max() <= 2.5
+    assert val_df.duration_in_seconds.max() <= 2.5
+    assert test_df.duration_in_seconds.max() == 4.0
+    assert stats["splits"]["train"]["samples_before_duration_filter"] == 16
+    assert stats["splits"]["train"]["samples_after_duration_filter"] == 8
+    assert stats["splits"]["train"]["samples_removed_by_duration_filter"] == 8
+    assert stats["splits"]["train"]["duration_filter_seconds"] == 2.5
+    assert stats["splits"]["train"]["duration_seconds_before_filter"]["max"] == 4.0
+    assert stats["splits"]["train"]["duration_seconds_after_filter"]["max"] == 1.0
+    assert stats["splits"]["test"]["duration_filter_seconds"] is None
+    assert stats["splits"]["test"]["samples_removed_by_duration_filter"] == 0

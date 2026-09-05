@@ -149,7 +149,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["warn", "rechunk", "skip"],
         help="How to handle chunks whose TTS-normalized text exceeds --max-tts-words (default: rechunk).",
     )
-    llm_parser.add_argument("--whisper", action="store_true", help="Filter train/val samples to max 30s for Whisper fine-tuning.")
+    llm_parser.add_argument(
+        "--max-audio-duration-seconds",
+        type=float,
+        help="Maximum generated audio duration retained by --whisper filtering (default: 30.0).",
+    )
+    llm_parser.add_argument(
+        "--whisper",
+        action="store_true",
+        help="Filter train/val samples to the configured max duration for Whisper fine-tuning.",
+    )
     llm_parser.add_argument(
         "--use-default-voice",
         action="store_true",
@@ -209,7 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["warn", "rechunk", "skip"],
         help="How to handle chunks whose TTS-normalized text exceeds --max-tts-words (default: rechunk).",
     )
-    real_parser.add_argument("--whisper", action="store_true", help="Filter train/val samples to max 30s for Whisper fine-tuning.")
+    real_parser.add_argument(
+        "--max-audio-duration-seconds",
+        type=float,
+        help="Maximum generated audio duration retained by --whisper filtering (default: 30.0).",
+    )
+    real_parser.add_argument(
+        "--whisper",
+        action="store_true",
+        help="Filter train/val samples to the configured max duration for Whisper fine-tuning.",
+    )
     real_parser.add_argument(
         "--use-default-voice",
         action="store_true",
@@ -274,6 +292,7 @@ def main() -> None:
             chunking_mode=merged.get("chunking_mode"),
             max_tts_words=merged.get("max_tts_words"),
             tts_length_policy=merged.get("tts_length_policy"),
+            max_audio_duration_seconds=merged.get("max_audio_duration_seconds"),
         )
         if args.dry_run:
             validate_llm_config(config)
@@ -310,6 +329,7 @@ def main() -> None:
             chunking_mode=merged.get("chunking_mode"),
             max_tts_words=merged.get("max_tts_words"),
             tts_length_policy=merged.get("tts_length_policy"),
+            max_audio_duration_seconds=merged.get("max_audio_duration_seconds"),
         )
         if args.dry_run:
             validate_real_config(config)

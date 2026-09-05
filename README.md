@@ -64,6 +64,7 @@ uv run mumblemed --verbose llm \
   --use-default-voice \
   --words-per-minute 80 \
   --chunking-mode sentence-divide \
+  --max-audio-duration-seconds 30 \
   --tts-language en
 ```
 
@@ -84,6 +85,7 @@ uv run mumblemed --verbose llm \
   --use-default-voice \
   --words-per-minute 80 \
   --chunking-mode sentence-divide \
+  --max-audio-duration-seconds 30 \
   --tts-language en
 ```
 
@@ -157,6 +159,14 @@ When transformed text exceeds that budget, `--tts-length-policy rechunk` splits 
 
 These settings are deliberately exposed because clinical documents are not all shaped the same way. A discharge letter with dense paragraphs, a radiology impression with short telegraphic lines, a pathology report with structured fields, and an oncology note full of TNM stages, medication schedules, and abbreviations can behave very differently during chunking and TTS transformation. Researchers should therefore run a small pilot, inspect the generated `stats.json`, and check whether the retained chunks still represent the document style they actually want the ASR model to learn.
 
+Finally, you can set the measured audio-duration threshold used by `--whisper`:
+
+```bash
+--max-audio-duration-seconds 30
+```
+
+These three controls act at different points. `--words-per-minute` estimates how much written text should enter a pre-TTS chunk. `--max-tts-words` checks the transformed TTS input after lautschrift expansion. `--max-audio-duration-seconds` filters by the final measured WAV duration after synthesis. Different ASR models or training recipes may use different duration limits, such as 20, 30, 45, or 60 seconds.
+
 ## Terminology And Prompts
 
 The `llm` mode uses terminology tables as clinical vocabulary sources. Each terminology table should be a CSV file with two columns:
@@ -200,7 +210,7 @@ The CSVs contain transcript text, audio paths, speaker ids, durations, split inf
 
 Splits are group-aware. In `llm` mode, chunks from the same synthetic document/patient stay together. In `real` mode, splitting uses `patient_id` when that column exists; otherwise, each row is treated as its own document-level group. This avoids the common ASR leakage problem where chunks from the same clinical case quietly appear in both train and test. For reproducible split assignment, pass `--seed`.
 
-When `--whisper` is enabled, MumbleMED filters train and validation samples above 30 seconds after audio has been generated. This is a downstream filter, not a segmentation step, so duration and text-length distributions should still be checked for each experiment.
+When `--whisper` is enabled, MumbleMED filters train and validation samples above `--max-audio-duration-seconds` after audio has been generated. This is a downstream filter, not a segmentation step. The test split is not duration-filtered by this flag, so users can decide how to evaluate long samples in their own setting. The stats report records sample counts and duration distributions before and after filtering.
 
 ## Useful Commands
 
@@ -239,6 +249,7 @@ WORDS_PER_MINUTE="80"
 CHUNKING_MODE="sentence-divide"
 MAX_TTS_WORDS=""
 TTS_LENGTH_POLICY="rechunk"
+MAX_AUDIO_DURATION_SECONDS="30.0"
 ```
 
 Use `LOCAL_LLM=true` only for self-hosted endpoints. Hosted providers should use `LLM_API_KEY`.
@@ -262,7 +273,7 @@ If you use real report text, licensed terminology exports, hosted LLM APIs, or s
 
 Synthetic speech should be evaluated before training or evaluation use. In particular, check whether the TTS output preserves the information that matters for your task, including clinical meaning, document structure, terminology, and local reporting conventions.
 
-Chunking is also an experimental choice. Users should know the failure modes of their own documents before scaling up generation: long line-based sections, unusual punctuation, copied table-like reports, dense medication lists, measurements, staging expressions, and local abbreviations can all change how much text ends up in one spoken sample. A small pilot run is often enough to reveal whether `sentence-strict`, `sentence-divide`, or `word-divide` is the right mode for a given corpus.
+Chunking and filtering are experimental choices. Users should know the failure modes of their own documents before scaling up generation: long line-based sections, unusual punctuation, copied table-like reports, dense medication lists, measurements, staging expressions, local abbreviations, TTS speed, and lautschrift expansion can all change how much text ends up in one spoken sample. A small pilot run is often enough to reveal whether `sentence-strict`, `sentence-divide`, or `word-divide` is the right mode for a given corpus and whether the configured duration limit removes a biased subset of samples.
 
 ## License
 

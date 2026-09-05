@@ -203,6 +203,28 @@ def test_llm_validation_rejects_invalid_max_tts_words(
         )
 
 
+def test_llm_validation_rejects_invalid_max_audio_duration(
+    tmp_path: Path,
+    example_coding_dir: Path,
+):
+    with pytest.raises(ValueError, match="max_audio_duration_seconds"):
+        validate_llm_config(
+            LlmDatasetConfig(
+                model_name="demo-model",
+                llm_endpoint="http://127.0.0.1:8000/v1",
+                llm_api_key=None,
+                dataset_path=tmp_path / "audio",
+                csv_path=tmp_path / "csv",
+                num_docs=1,
+                num_workers=1,
+                coding_systems_path=example_coding_dir,
+                use_default_voice=True,
+                local_llm=True,
+                max_audio_duration_seconds=0,
+            )
+        )
+
+
 def test_llm_config_reads_words_per_minute_from_env(
     tmp_path: Path,
     monkeypatch,
@@ -266,6 +288,27 @@ def test_llm_config_reads_tts_length_controls_from_env(
 
     assert config.max_tts_words == 32
     assert config.tts_length_policy == "warn"
+
+
+def test_llm_config_reads_max_audio_duration_from_env(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("LLM_NAME", "demo-model")
+    monkeypatch.setenv("LLM_ENDPOINT", "http://127.0.0.1:8000/v1")
+    monkeypatch.setenv("LLM_DATASET_PATH", str(tmp_path / "audio"))
+    monkeypatch.setenv("LLM_CSV_PATH", str(tmp_path / "csv"))
+    monkeypatch.setenv("MAX_AUDIO_DURATION_SECONDS", "45.5")
+
+    config = build_llm_config_from_env(
+        num_docs=1,
+        num_workers=1,
+        use_default_voice=True,
+        local_llm=True,
+        coding_systems_path=str(tmp_path),
+    )
+
+    assert config.max_audio_duration_seconds == 45.5
 
 
 def test_llm_config_treats_empty_max_tts_words_as_unset(
