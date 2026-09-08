@@ -22,6 +22,7 @@ from mumblemed.utils.chunking import (
 )
 from mumblemed.utils.llm import (
     DEFAULT_TTS_LENGTH_POLICY,
+    PROMPT_LANGUAGES,
     TTS_LENGTH_POLICIES,
     generate_random_displays,
     generate_synthetic_medical_text,
@@ -59,6 +60,7 @@ class LlmDatasetConfig:
     coding_system_files: dict[str, str] | None = None  # optional name -> filename for custom systems
     whisper_mode: bool = False
     tts_language: str = "de"
+    prompt_language: str = "de"
     use_default_voice: bool = False
     local_llm: bool = False
     words_per_minute: int = 80
@@ -97,6 +99,7 @@ def _process_document(
     dataset_path: pathlib.Path,
     verbose: bool,
     tts_language: str = "de",
+    prompt_language: str = "de",
     use_default_voice: bool = False,
     words_per_minute: int = 80,
     chunking_mode: str = DEFAULT_CHUNKING_MODE,
@@ -114,6 +117,7 @@ def _process_document(
             client=client,
             model_name=model_name,
             displays=random_displays,
+            prompt_language=prompt_language,
         )
 
         chunks = chunk_document(
@@ -205,6 +209,7 @@ def _process_document_wrapper(args):
         dataset_path,
         verbose,
         tts_language,
+        prompt_language,
         use_default_voice,
         words_per_minute,
         chunking_mode,
@@ -219,6 +224,7 @@ def _process_document_wrapper(args):
         dataset_path,
         verbose,
         tts_language,
+        prompt_language,
         use_default_voice,
         words_per_minute,
         chunking_mode,
@@ -379,6 +385,8 @@ def validate_llm_config(config: LlmDatasetConfig) -> None:
         raise ValueError("words_per_minute must be > 0")
     if config.chunking_mode not in CHUNKING_MODES:
         raise ValueError(f"chunking_mode must be one of {sorted(CHUNKING_MODES)}")
+    if config.prompt_language not in PROMPT_LANGUAGES:
+        raise ValueError(f"prompt_language must be one of {sorted(PROMPT_LANGUAGES)}")
     if config.max_tts_words is not None and config.max_tts_words <= 0:
         raise ValueError("max_tts_words must be > 0")
     if config.tts_length_policy not in TTS_LENGTH_POLICIES:
@@ -463,6 +471,7 @@ def generate_llm_dataset(config: LlmDatasetConfig) -> None:
                 config.dataset_path,
                 config.verbose,
                 config.tts_language,
+                config.prompt_language,
                 config.use_default_voice,
                 config.words_per_minute,
                 config.chunking_mode,
@@ -552,6 +561,7 @@ def build_llm_config_from_env(
     coding_system_files: str | dict[str, str] | None = None,
     whisper_mode: bool = False,
     tts_language: str | None = None,
+    prompt_language: str | None = None,
     use_default_voice: bool | str | None = None,
     local_llm: bool | str | None = None,
     words_per_minute: int | str | None = None,
@@ -563,6 +573,9 @@ def build_llm_config_from_env(
 ) -> LlmDatasetConfig:
     """Build an LLM dataset config from CLI overrides, config files, and .env."""
     load_env()
+    resolved_tts_language = tts_language or get_env("TTS_LANGUAGE", "de")
+    resolved_prompt_language = prompt_language or get_env("PROMPT_LANGUAGE", None) or resolved_tts_language
+
     return LlmDatasetConfig(
         model_name=model_name or get_env("LLM_NAME", required=True),
         llm_endpoint=llm_endpoint or get_env("LLM_ENDPOINT", required=True),
@@ -580,7 +593,8 @@ def build_llm_config_from_env(
             coding_system_files or get_env("CODING_SYSTEM_FILES", None)
         ),
         whisper_mode=whisper_mode,
-        tts_language=tts_language or get_env("TTS_LANGUAGE", "de"),
+        tts_language=resolved_tts_language,
+        prompt_language=resolved_prompt_language,
         use_default_voice=_parse_bool(
             use_default_voice if use_default_voice is not None else get_env("USE_DEFAULT_TTS_VOICE", None)
         ),

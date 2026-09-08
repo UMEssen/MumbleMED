@@ -1,4 +1,6 @@
 from mumblemed.utils.llm import (
+    build_synthetic_text_prompt,
+    build_text_structure_prompt,
     build_tts_length_metadata,
     derive_rechunk_word_budget,
     prepare_tts_segments,
@@ -23,7 +25,9 @@ class _FakeResponse:
 
 class _FakeCompletions:
     def create(self, model, temperature, messages):
-        text = messages[-1]["content"].split("Hier ist der Text:")[-1]
+        prompt = messages[-1]["content"]
+        marker = "Here is the text:" if "Here is the text:" in prompt else "Hier ist der Text:"
+        text = prompt.split(marker)[-1]
         text = " ".join(text.split())
         expanded = text.replace(".", " Punkt").replace(",", " Komma")
         return _FakeResponse(expanded)
@@ -35,6 +39,62 @@ class _FakeChat:
 
 class _FakeClient:
     chat = _FakeChat()
+
+
+def test_synthetic_text_prompt_can_be_german():
+    prompt = build_synthetic_text_prompt(
+        displays={"ICD": ["Diabetes mellitus Typ 2"]},
+        prompt_language="de",
+    )
+
+    assert "Denk Dir eine klinische Geschichte" in prompt
+    assert "Beispieltext" in prompt
+    assert "Diabetes mellitus Typ 2" in prompt
+
+
+def test_synthetic_text_prompt_can_be_english():
+    prompt = build_synthetic_text_prompt(
+        displays={"ICD": ["type 2 diabetes mellitus"]},
+        prompt_language="en",
+    )
+
+    assert "Create a clinical story" in prompt
+    assert "Example text" in prompt
+    assert "type 2 diabetes mellitus" in prompt
+    assert "Denk Dir" not in prompt
+
+
+def test_text_structure_prompt_uses_english_spoken_form_instructions():
+    prompt = build_text_structure_prompt(
+        text="No acute finding.",
+        language_code="en",
+    )
+
+    assert "clear spoken form" in prompt
+    assert "period" in prompt
+    assert "Punkt" not in prompt
+
+
+def test_text_structure_prompt_forbids_periods_from_english_line_breaks():
+    prompt = build_text_structure_prompt(
+        text="Diagnoses\nCOPD GOLD II",
+        language_code="en",
+    )
+
+    assert "line breaks, headings, and section boundaries" in prompt
+    assert "Do not insert or spell out \"period\"" in prompt
+    assert "If a line has no period in the original text" in prompt
+
+
+def test_text_structure_prompt_forbids_punkt_from_german_line_breaks():
+    prompt = build_text_structure_prompt(
+        text="Diagnosen\nCOPD GOLD II",
+        language_code="de",
+    )
+
+    assert "Zeilenumbrüche, Überschriften und Abschnittswechsel" in prompt
+    assert "Füge kein „Punkt“ ein" in prompt
+    assert "Wenn im Originaltext am Zeilenende kein Punkt steht" in prompt
 
 
 def test_tts_expansion_ratio_counts_transformed_text():
@@ -90,3 +150,17 @@ def test_prepare_tts_segments_can_skip_overlong_transformed_text():
     )
 
     assert segments == []
+
+
+def test_prepare_tts_segments_does_not_create_punkt_from_report_line_breaks():
+    segments = prepare_tts_segments(
+        client=_FakeClient(),
+        model_name="fake-model",
+        label_chunk="Diagnosen\nCOPD GOLD II\nAufnahme\nDyspnoe seit drei Tagen",
+        language_code="de",
+        max_tts_words=20,
+        tts_length_policy="warn",
+    )
+
+    assert len(segments) == 1
+    assert "Punkt" not in segments[0]["tts_chunk"]

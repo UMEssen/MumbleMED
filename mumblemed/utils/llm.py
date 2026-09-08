@@ -14,6 +14,7 @@ DEFAULT_CODING_SYSTEM_FILES = {
 }
 TTS_LENGTH_POLICIES = {"warn", "rechunk", "skip"}
 DEFAULT_TTS_LENGTH_POLICY = "rechunk"
+PROMPT_LANGUAGES = {"de", "en"}
 
 
 def _load_display_table(data_dir: Path, filename: str) -> pd.DataFrame:
@@ -69,25 +70,52 @@ def generate_random_displays(coding_tables: dict):
     return selected_displays, selected_codes
 
 
-# Example LLM text generation using the OpenAI-compatible API.
+def _normalize_prompt_language(language_code: str) -> str:
+    """Return the supported prompt language for a language code."""
+    normalized = str(language_code).lower().split("-")[0]
+    if normalized not in PROMPT_LANGUAGES:
+        raise ValueError(f"prompt_language must be one of {sorted(PROMPT_LANGUAGES)}")
+    return normalized
 
-def generate_synthetic_medical_text(client, model_name, displays):
-    # LLM prompt (tailored for a clinical narrative)
-    prompt = (
-        "Denk Dir eine klinische Geschichte oder medizinische Erzählung, die die folgenden medizinischen Fachbegriffe und Formulierungen nutzen. "
-        "Der Text soll ein realistisches medizinisches Szenario darstellen, das auf den ausgewählten Anzeigen basiert. Verwende nur reinen Text und kein Markdown! \n\n"
-    )
-    
-    # Dynamically include the selected systems
+
+def build_synthetic_text_prompt(displays: dict, prompt_language: str = "de") -> str:
+    """Build the LLM prompt that turns terminology displays into a clinical document."""
+    language = _normalize_prompt_language(prompt_language)
+    if language == "en":
+        prompt = (
+            "Create a clinical story or medical narrative that uses the following medical terms and phrases. "
+            "The text should describe a realistic medical scenario based on the selected displays. "
+            "Return plain text only and do not use Markdown.\n\n"
+        )
+        example_header = "\nExample text:\n\n"
+        example_text = (
+            "A 55-year-old patient presents to the hospital with symptoms of type 2 diabetes mellitus. "
+            "The patient has a longer history of hypertension and was recently referred for laparoscopic appendectomy. "
+            "In addition, an X-ray of the lumbar spine was obtained to rule out possible spinal disease."
+        )
+    else:
+        prompt = (
+            "Denk Dir eine klinische Geschichte oder medizinische Erzählung, die die folgenden medizinischen Fachbegriffe und Formulierungen nutzen. "
+            "Der Text soll ein realistisches medizinisches Szenario darstellen, das auf den ausgewählten Anzeigen basiert. Verwende nur reinen Text und kein Markdown! \n\n"
+        )
+        example_header = "\nBeispieltext:\n\n"
+        example_text = (
+            "Ein 55-jähriger Patient kommt in die Klinik mit Symptomen von Diabetes mellitus Typ 2. "
+            "Er hat eine längere Geschichte von Hypertonie und wurde kürzlich zur Durchführung einer Laparoskopischen Appendektomie in die Klinik überwiesen. "
+            "Zusätzlich wurde eine Röntgenaufnahme des Lendenwirbelbereichs gemacht, um mögliche Wirbelsäulenprobleme auszuschließen."
+        )
+
     for system, display in displays.items():
         prompt += f"{system}: {display}\n"
-    
-    prompt += "\nBeispieltext:\n\n"
-    prompt += (
-        "Ein 55-jähriger Patient kommt in die Klinik mit Symptomen von Diabetes mellitus Typ 2. "
-        "Er hat eine längere Geschichte von Hypertonie und wurde kürzlich zur Durchführung einer Laparoskopischen Appendektomie in die Klinik überwiesen. "
-        "Zusätzlich wurde eine Röntgenaufnahme des Lendenwirbelbereichs gemacht, um mögliche Wirbelsäulenprobleme auszuschließen."
-    )
+
+    prompt += example_header
+    prompt += example_text
+    return prompt
+
+
+def generate_synthetic_medical_text(client, model_name, displays, prompt_language: str = "de"):
+    """Generate a synthetic clinical document from terminology displays."""
+    prompt = build_synthetic_text_prompt(displays=displays, prompt_language=prompt_language)
 
     # Call the OpenAI-compatible API
     response = client.chat.completions.create(
@@ -98,15 +126,79 @@ def generate_synthetic_medical_text(client, model_name, displays):
         ]
     )
 
-    # Extract the response
     synthetic_text = response.choices[0].message.content.strip()
 
     return synthetic_text
 
 
-def process_text_structure(client, model_name, text):
-    # LLM prompt (tailored for a clinical narrative)
-    intro = r"""
+def build_text_structure_prompt(text: str, language_code: str = "de") -> str:
+    """Build the prompt that rewrites transcript labels into TTS-friendly spoken text."""
+    language = _normalize_prompt_language(language_code)
+    if language == "en":
+        intro = r"""
+        You are an assistant preparing medical text for fine-tuning a speech-to-text model. Your task is to convert a given medical text into a clear spoken form for text-to-speech synthesis.
+
+        Spell out punctuation and special characters where this helps the TTS model pronounce the text clearly, for example:
+
+        . -> "period"
+
+        , -> "comma"
+
+        - -> "hyphen"
+
+        % -> "percent"
+
+        ( -> "open parenthesis"
+
+        ) -> "close parenthesis"
+
+        : -> "colon"
+
+        ? -> "question mark"
+
+        ! -> "exclamation mark"
+
+        / -> "slash"
+
+        \ -> "backslash"
+
+        = -> "equals sign"
+
+        + -> "plus sign"
+
+        Expand common medical abbreviations where the expansion is unambiguous in context, for example:
+
+        i.v. -> "intravenous"
+
+        DD -> "differential diagnosis"
+
+        ED -> "initial diagnosis"
+
+        s/p -> "status post"
+
+        CT -> "computed tomography"
+
+        MRI -> "magnetic resonance imaging"
+
+        contrast -> "contrast medium" where clinically appropriate
+
+        neg. -> "negative"
+
+        pos. -> "positive"
+
+        Keep numbers as numbers unless spelling them out is clearer for speech synthesis.
+
+        Important: Do not add extra commas or punctuation after replacement words.
+
+        Important for clinical reports: line breaks, headings, and section boundaries are document structure, not spoken punctuation. Do not insert or spell out "period" because a line ends, a heading appears, or a section changes. If a line has no period in the original text, concatenate it naturally with the following spoken text instead of inventing one.
+
+        Return only the converted text in clear spoken form, without abbreviations or special characters where possible. The output is intended for speech synthesis and must stay clinically consistent with the original text.
+
+        Here is the text:
+
+    """
+    else:
+        intro = r"""
         Du bist ein Assistent zur Vorbereitung medizinischer Texte für das Fine-Tuning eines Speech-to-Text-Modells. Deine Aufgabe ist es, einen gegebenen medizinischen Text in eine lautsprachlich vollständige Form umzuwandeln, bei der:
 
         Alle Satzzeichen und Sonderzeichen ausgeschrieben werden, zum Beispiel:
@@ -171,17 +263,24 @@ def process_text_structure(client, model_name, text):
 
         Wichtig: Für jedes Ersetzte Wort füge bitte kein zusätzliches Komma oder Satzzeichen an. 
 
+        Wichtig für klinische Berichte: Zeilenumbrüche, Überschriften und Abschnittswechsel sind Dokumentstruktur und keine gesprochene Interpunktion. Füge kein „Punkt“ ein und schreibe keinen Punkt aus, nur weil eine Zeile endet, eine Überschrift erscheint oder ein Abschnitt wechselt. Wenn im Originaltext am Zeilenende kein Punkt steht, verbinde die Zeile natürlich mit dem folgenden gesprochenen Text, anstatt einen Punkt zu erfinden.
+
         Bitte gib nur die umgewandelte Version des Textes zurück in klarer, lautschriftlich orientierter Form, vollständig ausgeschrieben, ohne Abkürzungen oder Sonderzeichen. Beachte, dass der Text für Sprachsynthese gedacht ist und daher besonders klar und eindeutig sein muss und gleichzeitig konsistent mit dem Orignal Text.
 
         Hier ist der Text:
     
     """
-    
-    prompt = f"""
+
+    return f"""
         {intro}
 
         {text}
     """
+
+
+def process_text_structure(client, model_name, text, language_code: str = "de"):
+    """Convert a text chunk into a TTS-friendly spoken representation."""
+    prompt = build_text_structure_prompt(text=text, language_code=language_code)
 
     # Call the OpenAI-compatible API
     response = client.chat.completions.create(
@@ -251,7 +350,12 @@ def prepare_tts_segments(
     if tts_length_policy not in TTS_LENGTH_POLICIES:
         raise ValueError(f"tts_length_policy must be one of {sorted(TTS_LENGTH_POLICIES)}")
 
-    tts_chunk = process_text_structure(client=client, model_name=model_name, text=label_chunk)
+    tts_chunk = process_text_structure(
+        client=client,
+        model_name=model_name,
+        text=label_chunk,
+        language_code=language_code,
+    )
     metadata = build_tts_length_metadata(
         label_chunk=label_chunk,
         tts_chunk=tts_chunk,
@@ -273,7 +377,12 @@ def prepare_tts_segments(
 
     segments = []
     for subchunk in subchunks:
-        sub_tts_chunk = process_text_structure(client=client, model_name=model_name, text=subchunk)
+        sub_tts_chunk = process_text_structure(
+            client=client,
+            model_name=model_name,
+            text=subchunk,
+            language_code=language_code,
+        )
         segments.append(
             build_tts_length_metadata(
                 label_chunk=subchunk,

@@ -65,6 +65,7 @@ uv run mumblemed --verbose llm \
   --words-per-minute 80 \
   --chunking-mode sentence-divide \
   --max-audio-duration-seconds 30 \
+  --prompt-language en \
   --tts-language en
 ```
 
@@ -149,7 +150,7 @@ You can choose how strictly MumbleMED follows sentence boundaries:
 
 The default mode, `sentence-divide`, keeps language-aware sentence and report-line boundaries where possible, but divides overlong sentence-like units into word windows. Use `sentence-strict` if sentence integrity is more important than length control. Use `word-divide` for highly structured or poorly punctuated documents where a fixed word budget is the priority.
 
-There is a second length check after the text has been rewritten for TTS. This matters because punctuation, measurements, abbreviations, slashes, staging labels, and local shorthand can expand during the lautschrift-style transformation. A written chunk may look short, but the spoken TTS input may be longer after `.` becomes `Punkt`, `/` becomes `Schrägstrich`, or abbreviations are expanded. By default, MumbleMED derives the transformed-text budget from `--words-per-minute`, but you can set it directly:
+There is a second length check after the text has been rewritten for TTS. This matters because punctuation, measurements, abbreviations, slashes, staging labels, and local shorthand can expand during spoken-form normalization. In the German setup used for the original study, for example, `.` may become `Punkt`, `/` may become `Schrägstrich`, and abbreviations may be expanded before synthesis. A written chunk can therefore look short while the actual TTS input becomes longer. By default, MumbleMED derives the transformed-text budget from `--words-per-minute`, but you can set it directly:
 
 ```bash
 --max-tts-words 30
@@ -165,7 +166,9 @@ Finally, you can set the measured audio-duration threshold used by `--whisper`:
 --max-audio-duration-seconds 30
 ```
 
-These three controls act at different points. `--words-per-minute` estimates how much written text should enter a pre-TTS chunk. `--max-tts-words` checks the transformed TTS input after lautschrift expansion. `--max-audio-duration-seconds` filters by the final measured WAV duration after synthesis. Different ASR models or training recipes may use different duration limits, such as 20, 30, 45, or 60 seconds.
+These three controls act at different points. `--words-per-minute` estimates how much written text should enter a pre-TTS chunk. `--max-tts-words` checks the transformed TTS input after spoken-form normalization. `--max-audio-duration-seconds` filters by the final measured WAV duration after synthesis. Different ASR models or training recipes may use different duration limits, such as 20, 30, 45, or 60 seconds.
+
+As a practical example, `--words-per-minute 40` means roughly 20 written words per 30-second pre-TTS chunk, because the chunker uses half of the minute estimate. A setting such as `--max-tts-words 60` or `--max-tts-words 90` is not another speaking-rate estimate; it is the maximum length allowed after the text has been rewritten into the spoken form used for TTS.
 
 ## Terminology And Prompts
 
@@ -182,6 +185,16 @@ examples/coding-systems/
 ```
 
 Those files are only for testing, and you should replace them with your own licensed terminology exports before running a real experiment.
+
+The original MumbleMED study used German clinical language, and the bundled prompts grew out of that setting. In the framework, the language of synthetic documents is now explicit. Use `--prompt-language` to decide what the LLM should write:
+
+```bash
+--prompt-language de
+```
+
+If you do not set `--prompt-language`, MumbleMED aligns it with `--tts-language`. That makes quick checks behave as most users would expect: German TTS receives German prompts, and English TTS receives English prompts. Still, the two settings are not the same thing. `--prompt-language` controls the generated clinical text. `--tts-language` controls the TTS path, language-aware chunking, and spoken-form normalization.
+
+For multilingual or non-German datasets, inspect a small batch before scaling up. Terminology language, prompt language, TTS voice, punctuation expansion, and clinical abbreviations should all fit the same experimental story. Otherwise, the framework may faithfully produce a dataset that is technically valid but scientifically weird, which is a very medical-informatics way to lose an afternoon.
 
 ### Customizing Synthetic Documents
 
@@ -206,7 +219,7 @@ In `real` mode, MumbleMED creates a run folder under `--dataset-path`.
 
 Before speech synthesis, MumbleMED chunks text with language-aware sentence boundaries and keeps meaningful non-empty report lines as possible section boundaries. This is useful for clinical documents such as discharge letters, radiology reports, and pathology descriptions, where line structure often carries more information than ordinary prose punctuation. Sentence boundary detection is still not magic. Clinical German, local abbreviations, sparse punctuation, headings, codes, and copied report templates can confuse NLTK, so researchers should inspect chunk length distributions and choose the chunking mode that fits their document structure.
 
-The CSVs contain transcript text, audio paths, speaker ids, durations, split information, group identifiers, and word-count metadata for both the original transcript chunk and the transformed TTS input. A small `stats.json` is written next to them so you can inspect the generated dataset before training. The label-word and TTS-word summaries are especially useful when lautschrift expansion turns compact written notation into longer spoken input.
+The CSVs contain transcript text, audio paths, speaker ids, durations, split information, group identifiers, and word-count metadata for both the original transcript chunk and the transformed TTS input. A small `stats.json` is written next to them so you can inspect the generated dataset before training. The label-word and TTS-word summaries are especially useful when spoken-form normalization turns compact written notation into longer TTS input.
 
 Splits are group-aware. In `llm` mode, chunks from the same synthetic document/patient stay together. In `real` mode, splitting uses `patient_id` when that column exists; otherwise, each row is treated as its own document-level group. This avoids the common ASR leakage problem where chunks from the same clinical case quietly appear in both train and test. For reproducible split assignment, pass `--seed`.
 
@@ -245,6 +258,7 @@ LLM_CSV_PATH="./out/csvs"
 CODING_SYSTEMS_PATH="./examples/coding-systems"
 USE_DEFAULT_TTS_VOICE="true"
 TTS_LANGUAGE="en"
+PROMPT_LANGUAGE="en"
 WORDS_PER_MINUTE="80"
 CHUNKING_MODE="sentence-divide"
 MAX_TTS_WORDS=""
@@ -273,7 +287,7 @@ If you use real report text, licensed terminology exports, hosted LLM APIs, or s
 
 Synthetic speech should be evaluated before training or evaluation use. In particular, check whether the TTS output preserves the information that matters for your task, including clinical meaning, document structure, terminology, and local reporting conventions.
 
-Chunking and filtering are experimental choices. Users should know the failure modes of their own documents before scaling up generation: long line-based sections, unusual punctuation, copied table-like reports, dense medication lists, measurements, staging expressions, local abbreviations, TTS speed, and lautschrift expansion can all change how much text ends up in one spoken sample. A small pilot run is often enough to reveal whether `sentence-strict`, `sentence-divide`, or `word-divide` is the right mode for a given corpus and whether the configured duration limit removes a biased subset of samples.
+Chunking and filtering are experimental choices. Users should know the failure modes of their own documents before scaling up generation: long line-based sections, unusual punctuation, copied table-like reports, dense medication lists, measurements, staging expressions, local abbreviations, TTS speed, and spoken-form normalization can all change how much text ends up in one spoken sample. A small pilot run is often enough to reveal whether `sentence-strict`, `sentence-divide`, or `word-divide` is the right mode for a given corpus and whether the configured duration limit removes a biased subset of samples.
 
 ## License
 

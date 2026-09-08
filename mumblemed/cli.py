@@ -130,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="TTS language code: 'de' for German (Kartoffelbox patch), e.g. 'en' for default Chatterbox (English).",
     )
     llm_parser.add_argument(
+        "--prompt-language",
+        choices=["de", "en"],
+        help="Language used by the synthetic document and TTS-normalization prompts. Defaults to --tts-language.",
+    )
+    llm_parser.add_argument(
         "--words-per-minute",
         type=int,
         help="Estimated speaking rate used for chunk sizing before TTS (default: 80, or WORDS_PER_MINUTE).",
@@ -287,6 +292,7 @@ def main() -> None:
             coding_system_files=merged.get("coding_system_files"),
             whisper_mode=merged.get("whisper", False),
             tts_language=merged.get("tts_language"),
+            prompt_language=merged.get("prompt_language"),
             use_default_voice=merged.get("use_default_voice", False),
             words_per_minute=merged.get("words_per_minute"),
             chunking_mode=merged.get("chunking_mode"),
