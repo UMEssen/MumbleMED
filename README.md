@@ -12,7 +12,7 @@
 
 MumbleMED is a research framework for creating synthetic medical speech datasets for ASR fine-tuning. It starts with clinical language, either generated from terminology tables or read from existing report text, turns that language into speech with TTS, and writes audio paths and transcripts in a training-friendly format.
 
-The repository is deliberately small. It does not contain patient audio, real speaker recordings, or official terminology exports. Instead, it ships with tiny public examples so that reviewers and new users can run the framework without private data. For real experiments, you bring your own licensed terminology tables, real report text if available, and optionally consented speaker reference clips.
+The repository is deliberately small. It does not contain patient audio, real speaker recordings, or official terminology exports. Instead, it ships with tiny public examples so that users can run the framework without private data. For real experiments, you bring your own licensed terminology tables, real report text if available, and optionally consented speaker reference clips.
 
 The mental model is simple. Terminology and prompts define what should be said, TTS defines how it is spoken, and the splitter makes sure related samples do not leak across train, validation, and test. The result is a small lab bench for synthetic medical ASR data, with fewer mysteries than a full hospital data lake.
 
@@ -295,4 +295,4 @@ MumbleMED is licensed under the MIT License. See [LICENSE](LICENSE) for the full
 
 ## Manuscript
 
-A current preprint is available at [JMIR Preprints](https://preprints.jmir.org/preprint/99797). We will replace this link as soon as there is an update in the review process or publication process, including a final manuscript, accepted manuscript, or version-of-record link. Until then, please treat the preprint as a non-final scholarly reference.
+A current preprint is available at [JMIR Preprints](https://preprints.jmir.org/preprint/99797). We will replace this link as soon as an updated scholarly version is available, including a final manuscript, accepted manuscript, or version-of-record link. Until then, please treat the preprint as a non-final scholarly reference.
